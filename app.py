@@ -369,12 +369,23 @@ else:
         if df_m.empty: st.warning("Isi data dulu.")
         else:
             teams = sorted(list(set(df_m['home_team'].tolist() + df_m['away_team'].tolist())))
+            
+            st.subheader("1. Pilih Tim Pertandingan")
             c_a, c_b = st.columns(2)
             h_s = c_a.selectbox("Home", teams)
             a_s = c_b.selectbox("Away", teams)
-            if st.button("Analis Sekarang 🚀"):
+            
+            st.subheader("2. Pilih Jenis Prediksi (Odds)")
+            odds_type = st.radio("Jenis Pasar:", ["1X2 (Win/Draw/Loss)", "Over/Under (Total Gol)"], horizontal=True)
+            ou_threshold = 2.5
+            if odds_type == "Over/Under (Total Gol)":
+                ou_threshold = st.number_input("Batas Over/Under (Misal: 2.5, 3.0)", min_value=0.5, step=0.25, value=2.5, format="%.2f")
+            
+            st.divider()
+            if st.button("Analis Sekarang 🚀", type="primary"):
                 m_row = df_m[(df_m['home_team']==h_s) & (df_m['away_team']==a_s)]
                 if m_row.empty: st.error("Match tidak ditemukan di DB.")
+                elif h_s == a_s: st.error("Tim Home dan Away tidak boleh sama!")
                 else:
                     api, mod = get_user_settings(st.session_state.user_id)
                     cur_m = m_row.iloc[0]
@@ -383,14 +394,38 @@ else:
                     
                     hist = get_match_history(st.session_state.user_id, h_s, a_s, match_id_real)
                     h_txt = "\n".join([f"- {r['match_date']}: {r['home_team']} vs {r['away_team']} ({r['stats_json']})" for _,r in hist.iterrows()])
-                    p = f"Analisa Match: {h_s} vs {a_s}\nStats: {cur_m['stats_json']}\nHistori:\n{h_txt}\nBerikan Prediksi WDL & Alasan."
                     
-                    with st.spinner("AI sedang berpikir..."):
+                    # --- MENYUSUN PROMPT DINAMIS SESUAI ODDS ---
+                    if odds_type == "1X2 (Win/Draw/Loss)":
+                        task_instruction = """Tugas Anda:
+1. Analisis tren performa berdasarkan Histori Masa Lalu dibandingkan dengan Catatan Saat Ini.
+2. Berikan prediksi 1X2 (Home Win / Draw / Away Win) secara tegas.
+3. Berikan probabilitas persentase.
+4. Berikan 3 poin alasan strategis mengapa histori tersebut mempengaruhi prediksi ini."""
+                        report_type = "WDL (1X2)"
+                    else:
+                        task_instruction = f"""Tugas Anda:
+1. Analisis tren skor, produktivitas gol, dan pertahanan berdasarkan Histori Masa Lalu dibandingkan dengan Catatan Saat Ini.
+2. Berikan prediksi OVER atau UNDER untuk batas {ou_threshold} gol secara tegas.
+3. Berikan probabilitas persentase (Over {ou_threshold}: ...%, Under {ou_threshold}: ...%).
+4. Berikan 3 poin alasan strategis yang fokus HANYA pada potensi jumlah gol di pertandingan ini."""
+                        report_type = f"Over/Under ({ou_threshold})"
+
+                    p = f"""Analisa Match: {h_s} vs {a_s}
+Stats Saat Ini: {cur_m['stats_json']}
+
+Histori Performa Masa Lalu:
+{h_txt if h_txt else 'TIDAK ADA HISTORI TERDAHULU'}
+
+{task_instruction}
+Gunakan format markdown yang profesional."""
+                    
+                    with st.spinner(f"AI sedang berpikir menganalisa pasar {report_type}..."):
                         # Tangkap status API secara eksplisit (True / False)
                         is_success, res = call_openrouter_api(api, mod, p)
                         
                         if is_success:
-                            add_ai_report(st.session_state.user_id, match_id_real, "WDL Prediction", res)
+                            add_ai_report(st.session_state.user_id, match_id_real, report_type, res)
                             st.success("✅ Analisa selesai dan otomatis tersimpan ke Arsip (Reports)!")
                             st.markdown(res)
                         else: 
