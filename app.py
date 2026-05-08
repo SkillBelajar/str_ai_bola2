@@ -137,6 +137,17 @@ def delete_match(match_id, user_id):
     conn.commit()
     conn.close()
 
+def delete_all_matches(user_id):
+    """Menghapus SEMUA data pertandingan beserta riwayat analisanya untuk user ini."""
+    conn = get_connection()
+    c = conn.cursor()
+    # Hapus riwayat AI dulu agar tidak ada data yatim (orphaned data) karena relasi Foreign Key
+    c.execute("DELETE FROM ai_analysis_history WHERE user_id=?", (user_id,))
+    # Hapus data utama
+    c.execute("DELETE FROM main_data WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
 def get_match_history(user_id, team1, team2, current_match_id):
     conn = get_connection()
     query = """
@@ -264,13 +275,45 @@ else:
                 if st.form_submit_button("Simpan"):
                     add_match(st.session_state.user_id, d, h, a, s)
                     st.success("Tersimpan!")
+            
             st.divider()
-            up = st.file_uploader("Bulk Import (CSV/XLSX)")
+            
+            # --- TAMBAHAN FITUR: DOWNLOAD TEMPLATE ---
+            st.subheader("📥 Import Massal (Bulk Import)")
+            st.info("Silakan download template CSV di bawah ini agar format data Anda sesuai dengan sistem.")
+            
+            template_df = pd.DataFrame({
+                "match_date": ["2026-05-10", "2026-05-11"],
+                "home_team": ["Arsenal", "Real Madrid"],
+                "away_team": ["Chelsea", "Barcelona"],
+                "stats_json": ["Home win streak 5x", "Striker utama tim away cedera"]
+            })
+            
+            st.download_button(
+                label="⬇️ Download Template CSV",
+                data=template_df.to_csv(index=False).encode('utf-8'),
+                file_name="template_import_pertandingan.csv",
+                mime="text/csv"
+            )
+            
+            # --- UPLOAD FILE ---
+            up = st.file_uploader("Upload File Anda (CSV/XLSX yang sudah diisi)")
             if st.button("Import Now") and up:
-                df_up = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
-                for _, r in df_up.iterrows():
-                    add_match(st.session_state.user_id, r['match_date'], r['home_team'], r['away_team'], r['stats_json'])
-                st.success("Bulk Import Berhasil!")
+                try:
+                    df_up = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
+                    
+                    # Validasi Header
+                    required_cols = ['match_date', 'home_team', 'away_team', 'stats_json']
+                    if all(col in df_up.columns for col in required_cols):
+                        for _, r in df_up.iterrows():
+                            if pd.notna(r['home_team']) and pd.notna(r['away_team']):
+                                add_match(st.session_state.user_id, r['match_date'], r['home_team'], r['away_team'], r['stats_json'])
+                        st.success("✅ Bulk Import Berhasil!")
+                    else:
+                        st.error(f"Format salah! Pastikan header kolom adalah: {', '.join(required_cols)}")
+                except Exception as e:
+                    st.error(f"Gagal memproses file: {e}")
+
         with t1:
             st.subheader("Database Pertandingan")
             df_display = get_matches(st.session_state.user_id)
@@ -300,10 +343,22 @@ else:
                 )
                 
                 st.divider()
-                did = st.number_input("Hapus ID", step=1)
-                if st.button("Hapus"):
-                    delete_match(did, st.session_state.user_id)
-                    st.rerun()
+                st.subheader("⚙️ Hapus Data")
+                col_del1, col_del2 = st.columns(2)
+                
+                with col_del1:
+                    did = st.number_input("Hapus ID", step=1)
+                    if st.button("Hapus 1 Data"):
+                        delete_match(did, st.session_state.user_id)
+                        st.rerun()
+                        
+                with col_del2:
+                    st.warning("⚠️ Bahaya: Hapus Seluruh Database")
+                    confirm_reset = st.checkbox("Saya yakin ingin mereset SEMUA data")
+                    if st.button("🚨 Reset Semua Data", type="primary", disabled=not confirm_reset):
+                        delete_all_matches(st.session_state.user_id)
+                        st.success("Seluruh data berhasil dihapus!")
+                        st.rerun()
             else:
                 st.info("Belum ada data.")
 
