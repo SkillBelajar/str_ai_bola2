@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  streamlit-app:
+    build: .
+    ports:
+      - "6007:8501"
+    volumes:
+      - .:/app  # Ini yang membuat file sinkron otomatis
+    environment:
+      - STREAMLIT_SERVER_RUN_ON_SAVE=true
