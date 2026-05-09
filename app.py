@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import pandas as pd
 import requests
+import json  # Tambahan import untuk parsing JSON
 
 # ==========================================
 # 1. DATABASE SETUP & INITIALIZATION
@@ -321,6 +322,54 @@ else:
                         st.error(f"Format salah! Pastikan header kolom adalah: {', '.join(required_cols)}")
                 except Exception as e:
                     st.error(f"Gagal memproses file: {e}")
+
+            # --- TAMBAHAN FITUR: IMPORT MASSAL VIA JSON ---
+            st.divider()
+            st.subheader("📝 Input Massal via JSON")
+            st.info("Paste data pertandingan dalam format Array JSON. Cocok untuk integrasi data otomatis atau copy-paste langsung.")
+            
+            json_template = '''[
+  {
+    "match_date": "2026-05-10",
+    "home_team": "Liverpool",
+    "away_team": "Man City",
+    "stats_json": "Liverpool formasi 4-3-3"
+  },
+  {
+    "match_date": "2026-05-11",
+    "home_team": "Juventus",
+    "away_team": "AC Milan",
+    "stats_json": "Derby alot, kedua tim pakai lapis dua"
+  }
+]'''
+            json_input = st.text_area("Paste JSON Data di sini:", value=json_template, height=200)
+            
+            col_j1, col_j2 = st.columns(2)
+            replace_data_json = col_j1.checkbox("Hapus data lama sebelum import JSON", value=False)
+            
+            if col_j2.button("Proses Data JSON", type="primary"):
+                try:
+                    data_list = json.loads(json_input)
+                    if not isinstance(data_list, list):
+                        st.error("Format JSON harus berupa Array (diawali '[' dan diakhiri ']')")
+                    else:
+                        if replace_data_json:
+                            delete_all_matches(st.session_state.user_id)
+                        
+                        count = 0
+                        for item in data_list:
+                            h = item.get('home_team', '')
+                            a = item.get('away_team', '')
+                            if h and a:
+                                add_match(st.session_state.user_id, str(item.get('match_date', '')), h, a, str(item.get('stats_json', '')))
+                                count += 1
+                                
+                        action_txt = "menggantikan database lama" if replace_data_json else "ditambahkan ke database"
+                        st.success(f"✅ Import JSON Berhasil! {count} data telah {action_txt}.")
+                except json.JSONDecodeError as e:
+                    st.error(f"Format JSON tidak valid! Cek kembali tanda kutip atau koma. Error: {str(e)}")
+                except Exception as e:
+                    st.error(f"Gagal memproses JSON: {str(e)}")
 
         with t1:
             st.subheader("Database Pertandingan")
