@@ -297,18 +297,26 @@ else:
             )
             
             # --- UPLOAD FILE ---
+            st.warning("⚠️ Perhatian: Mengupload file baru akan menghapus SEMUA data pertandingan dan histori analisa yang lama!")
             up = st.file_uploader("Upload File Anda (CSV/XLSX yang sudah diisi)")
-            if st.button("Import Now") and up:
+            
+            if st.button("Import & Replace Data") and up:
                 try:
                     df_up = pd.read_csv(up) if up.name.endswith('.csv') else pd.read_excel(up)
                     
                     # Validasi Header
                     required_cols = ['match_date', 'home_team', 'away_team', 'stats_json']
                     if all(col in df_up.columns for col in required_cols):
+                        
+                        # --- HAPUS DATA LAMA SEBELUM IMPORT ---
+                        delete_all_matches(st.session_state.user_id)
+                        
+                        count = 0
                         for _, r in df_up.iterrows():
                             if pd.notna(r['home_team']) and pd.notna(r['away_team']):
                                 add_match(st.session_state.user_id, r['match_date'], r['home_team'], r['away_team'], r['stats_json'])
-                        st.success("✅ Bulk Import Berhasil!")
+                                count += 1
+                        st.success(f"✅ Import Berhasil! {count} data baru telah menggantikan database lama.")
                     else:
                         st.error(f"Format salah! Pastikan header kolom adalah: {', '.join(required_cols)}")
                 except Exception as e:
@@ -376,10 +384,18 @@ else:
             a_s = c_b.selectbox("Away", teams)
             
             st.subheader("2. Pilih Jenis Prediksi (Odds)")
-            odds_type = st.radio("Jenis Pasar:", ["1X2 (Win/Draw/Loss)", "Over/Under (Total Gol)"], horizontal=True)
+            odds_type = st.radio("Jenis Pasar:", ["1X2 (Win/Draw/Loss)", "Over/Under (Total Gol)", "Handicap (HDP)"], horizontal=True)
+            
             ou_threshold = 2.5
+            home_hdp = 0.0
+            away_hdp = 0.0
+            
             if odds_type == "Over/Under (Total Gol)":
                 ou_threshold = st.number_input("Batas Over/Under (Misal: 2.5, 3.0)", min_value=0.5, step=0.25, value=2.5, format="%.2f")
+            elif odds_type == "Handicap (HDP)":
+                col_hdp1, col_hdp2 = st.columns(2)
+                home_hdp = col_hdp1.number_input(f"HDP Home ({h_s})", step=0.25, value=0.0, format="%.2f", help="Bisa bernilai negatif (misal: -1.25) atau positif")
+                away_hdp = col_hdp2.number_input(f"HDP Away ({a_s})", step=0.25, value=0.0, format="%.2f", help="Bisa bernilai negatif atau 0.0")
             
             st.divider()
             if st.button("Analis Sekarang 🚀", type="primary"):
@@ -403,13 +419,20 @@ else:
 3. Berikan probabilitas persentase.
 4. Berikan 3 poin alasan strategis mengapa histori tersebut mempengaruhi prediksi ini."""
                         report_type = "WDL (1X2)"
-                    else:
+                    elif odds_type == "Over/Under (Total Gol)":
                         task_instruction = f"""Tugas Anda:
 1. Analisis tren skor, produktivitas gol, dan pertahanan berdasarkan Histori Masa Lalu dibandingkan dengan Catatan Saat Ini.
 2. Berikan prediksi OVER atau UNDER untuk batas {ou_threshold} gol secara tegas.
 3. Berikan probabilitas persentase (Over {ou_threshold}: ...%, Under {ou_threshold}: ...%).
 4. Berikan 3 poin alasan strategis yang fokus HANYA pada potensi jumlah gol di pertandingan ini."""
                         report_type = f"Over/Under ({ou_threshold})"
+                    elif odds_type == "Handicap (HDP)":
+                        task_instruction = f"""Tugas Anda:
+1. Analisis tren margin kemenangan dan daya tahan bertahan berdasarkan Histori Masa Lalu dibandingkan dengan Catatan Saat Ini.
+2. Berikan prediksi tim mana yang akan MENANG TARUHAN berdasarkan Handicap (HDP) berikut: Home ({h_s}) {home_hdp} vs Away ({a_s}) {away_hdp} secara tegas.
+3. Berikan probabilitas persentase menang taruhan HDP untuk masing-masing tim.
+4. Berikan 3 poin alasan strategis yang fokus HANYA pada potensi selisih skor (margin gol) yang mampu menutupi handicap tersebut."""
+                        report_type = f"HDP (H: {home_hdp} | A: {away_hdp})"
 
                     p = f"""Analisa Match: {h_s} vs {a_s}
 Stats Saat Ini: {cur_m['stats_json']}
